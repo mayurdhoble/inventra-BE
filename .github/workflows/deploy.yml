@@ -1,15 +1,15 @@
-name: CI/CD Pipeline
+name: Build and Push Docker Image to ECR
 
 on:
   push:
     branches: [ main ]
 
 jobs:
-  build-and-deploy:
+  build-and-push:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout source
+    - name: Checkout source code
       uses: actions/checkout@v3
 
     - name: Set up JDK 17
@@ -18,10 +18,8 @@ jobs:
         distribution: 'temurin'
         java-version: 17
 
-    - name: Make Maven wrapper executable and build JAR
-      run: |
-        chmod +x mvnw
-        ./mvnw clean package -DskipTests
+    - name: Build JAR with Maven
+      run: ./mvnw clean package -DskipTests
 
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v2
@@ -33,28 +31,10 @@ jobs:
     - name: Log in to Amazon ECR
       uses: aws-actions/amazon-ecr-login@v1
 
-    - name: Build and tag Docker image
+    - name: Build Docker image
       run: |
         docker build -t ${{ secrets.ECR_REGISTRY }}/inventra-app:latest .
-        docker tag ${{ secrets.ECR_REGISTRY }}/inventra-app:latest ${{ secrets.ECR_REGISTRY }}/inventra-app:${{ github.sha }}
 
-    - name: Push Docker image to ECR
+    - name: Push Docker image to Amazon ECR
       run: |
         docker push ${{ secrets.ECR_REGISTRY }}/inventra-app:latest
-        docker push ${{ secrets.ECR_REGISTRY }}/inventra-app:${{ github.sha }}
-
-    - name: SSH into EC2 and deploy container
-      uses: appleboy/ssh-action@v0.1.7
-      with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ec2-user
-        key: ${{ secrets.EC2_SSH_KEY }}
-        script: |
-          docker pull ${{ secrets.ECR_REGISTRY }}/inventra-app:latest
-          docker stop inventra || true
-          docker rm inventra || true
-          docker run -d \
-            --name inventra \
-            --restart unless-stopped \
-            -p 8889:8889 \
-            ${{ secrets.ECR_REGISTRY }}/inventra-app:latest
